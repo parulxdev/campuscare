@@ -1,80 +1,105 @@
-# CampusCare
+# CampusCare — AI-Powered Student Triage & Intelligent Support Routing
 
-**AI-Powered Student Triage & Intelligent Support Routing**
+**Student Triage & Routing.** One student, one real need: *"I have a problem and I don't know which office handles it."*
+The student writes it once, in their own words. CampusCare works out where it belongs, whether it is sensitive, how many others are hit,who should own it, and escalates it if nobody acts in time.
 
-A demo-ready prototype for Student Triage & Routing. The design follows the supplied challenge brief: the central feature is intelligent triage, routing, escalation and privacy-aware handling rather than a generic helpdesk.
+> CampusCare does not simply receive student complaints. It understands the request, determines where it belongs, decides whether it can  safely be clustered, evaluates impact, routes it to the right department and available staff, keeps sensitive cases private, sends uncertain cases to humans, and escalates unresolved cases through the correct hierarchy.
 
-## Stack
-- Frontend: React + Vite + Tailwind CSS + Recharts
-- Backend: FastAPI + SQLAlchemy
-- Database: SQLite
-- AI: deterministic classifier by default; API-ready integration point in `backend/app/services/routing_engine.py`
-- Auth: JWT + bcrypt password hashing
+## Folder structure
+```
+campuscare/
+├── .env.example            # copy to .env 
+├── README.md
+├── database/               # SQLite file lives here (campuscare.db)
+├── backend/
+│   ├── requirements.txt
+│   ├── main.py             # FastAPI app, CORS, SLA background loop
+│   ├── config.py           # thresholds, weights, SLA defaults, batch sizes
+│   ├── database.py         # engine / session
+│   ├── models.py           # all SQLAlchemy models
+│   ├── security.py         # PBKDF2 hashing, JWT, role guards
+│   ├── access.py           # RBAC scoping + role-safe serialization
+│   ├── seed.py             # demo data
+│   ├── services/
+│   │   ├── routing_engine.py   # triage → cluster → priority → route → assign → SLA → escalate
+│   │   ├── ai_classifier.py    # LLM call + Pydantic validation + rule fallback
+│   │   ├── rule_classifier.py  # deterministic classifier (no API key needed)
+│   │   └── similarity.py       # embeddings + cosine, or text/category fallback
+│   └── routers/ auth.py requests.py triage.py staff.py admin.py
+└── frontend/               # React + Vite + Tailwind + Recharts
+    └── src/ api.js auth.jsx App.jsx components/ pages/
+```
 
-## Run locally
+## Setup & run
+Requirements: Python 3.10+, Node 18+.
 
-### 1. Backend
 ```bash
+# 1. Environment
+cp .env.example .env            # optional: add OPENAI_API_KEY; app works without it
+
+# 2. Backend
 cd backend
 python -m venv .venv
-# Windows
-.venv\\Scripts\\activate
-# macOS/Linux
-source .venv/bin/activate
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env  # Windows
-# cp .env.example .env # macOS/Linux
-python seed.py
-uvicorn app.main:app --reload --port 8000
-```
+python seed.py                  # creates tables in ../database/campuscare.db + seeds demo data (re-run to reset)
+uvicorn main:app --reload --port 8000     # API docs: http://localhost:8000/docs
 
-### 2. Frontend
-Open another terminal:
-```bash
+# 3. Frontend (new terminal)
 cd frontend
 npm install
-npm run dev
+npm run dev                     # http://localhost:5173  (proxies /api → :8000)
 ```
-Open http://localhost:5173
+Tables are also auto-created on backend start (`init_db`), but `seed.py` is the database initialization + seed command for the demo.
 
-## Demo credentials
-All passwords: `Pass@123`
-
-| Role | Email |
+## Environment variables (.env)
+| Variable | Purpose |
 |---|---|
-| Student | student@campuscare.local |
-| Triage Agent | triage@campuscare.local |
-| Department Staff | finance@campuscare.local |
-| Dean | dean@campuscare.local |
-| Admin | admin@campuscare.local |
+| `SECRET_KEY` | JWT signing key. Change it. |
+| `OPENAI_API_KEY` / `LLM_API_KEY` | Optional. If absent → deterministic rule classifier + text similarity. |
+| `LLM_BASE_URL`, `LLM_MODEL`, `EMBEDDING_MODEL` | Any OpenAI-compatible endpoint (default `gpt-4o-mini`). |
+| `DEMO_MODE` | `true` enables the "simulate SLA breach" demo button. |
+| `SIMILARITY_THRESHOLD_FALLBACK`, `SIMILARITY_THRESHOLD_EMBEDDING`, `CLUSTER_WINDOW_DAYS` | Clustering tuning (0.60 / 0.80 / 14). Confidence bands 0.85 / 0.60 live in `backend/config.py`. |
+| `CORS_ORIGINS`, `JWT_EXPIRE_MINUTES` | Frontend origins, token lifetime. |
 
-## Main demo flow
-1. Login as student.
-2. Submit: `Our CSE 2027 batch is unable to complete fee payment for course registration. The payment portal keeps failing and the registration deadline is tomorrow.`
-3. Observe AI category, primary Finance routing, IT support, batch scope, high priority and confidence.
-4. Login as Triage Agent and open Command Center / Request Queue.
-5. Show non-sensitive Fee Payment Failure clustering and impact.
-6. Show an anonymous mental-health request: it bypasses normal clustering and uses restricted routing.
-7. Show the ambiguous request: low confidence sends it to Human Review.
-8. Show Escalations to demonstrate SLA/authority hierarchy.
+## Test credentials (all passwords: `Campus@123`)
+| Role | Username | What to show |
+|---|---|---|
+| Student | `student01` (CSE 2027) — also `student02…student20` | submit, track, reopen |
+| Triage agent | `triage.priya` | human triage queue, overrides |
+| Department staff | `fin.anita` (Finance), `it.kiran` (IT), `acad.vikram` (Academics) | own dept only |
+| Department lead (L2) | `fin.lead`, `it.lead`, `acad.lead` … | receives L2 escalations |
+| Counsellor (restricted) | `mh.rao` | sees mental-health cases; others can't |
+| Dean (L3) | `dean.academic` (IT/Acad/Fin/Placement), `dean.welfare` (MH/Med/Hostel/Disability/Safety) | escalations only |
+| Central admin (L4) | `central.admin` | top of hierarchy |
+| Admin | `admin` | everything + audit log |
 
-## Routing architecture
-`Request -> classify -> sensitivity/scope -> impact/priority -> similarity cluster (non-sensitive only) -> primary + supporting departments -> workload-aware staff assignment -> SLA -> escalation`.
+## Demo flow (≈5 minutes)
+1. **Student triage** — log in as `student01` → *Get support* → paste:
+   *"Our CSE 2027 batch is unable to complete fee payment for course registration. The payment portal keeps failing and the registration deadline is tomorrow."*
+   → **AI Triage Complete**: Finance / Scholarship (primary) + IT Services (supporting), Fee Payment, BATCH, HIGH, ~96% confidence, reason shown. No department picker.
+2. **Routing view** — log in as `fin.anita` or `triage.priya` → open the new case: route trace, cluster **Fee Payment Failure ~12 / 100 CSE 2027 students (12%)**, priority raised with reason (deadline + impact), assignment reason ("required skill matched + lowest active workload") and candidate score table.
+3. **Clusters** — `/staff/clusters` → the fee cluster lists 12 separate cases, each with its own ID, SLA and status. Never merged.
+4. **Escalation** — as `triage.priya` click **Demo: simulate SLA breach** → escalates L1 → L2 (`fin.lead` notified). Click again → L3 `dean.academic`. Log in as the dean → *Oversight* → **Decide** → close with decision note.
+5. **Low confidence** — `triage.priya` → *Human triage* → open the ~43% ambiguous case → correct department/subcategory, give reason → assigned. Override appears in the audit trail and *Admin → Routing feedback*.
+6. **Sensitive / anonymous** — as a student submit something like *"I've been feeling hopeless and can't cope"* with **Anonymous** → routed straight to Mental Health, restricted, no clustering, crisis contacts shown. `fin.anita` / `triage.priya` can't see it; `mh.rao` sees it with identity hidden.
+7. **Routing mismatch** — the seeded LMS case bounced IT → Academics → IT shows "Potential routing rule mismatch detected".
 
-The backend validates AI-like outputs against known department/category values and uses deterministic fallback logic so the demo works without an external AI key.
+## How it works
 
-## RBAC
-Backend APIs use JWT authentication and role checks. Students can only see their own requests. Department staff are scoped to their department. Triage agents can override routing. Dean sees escalated/hierarchy cases. Admin has full management/audit access.
+**Routing architecture.** All decisions live in `services/routing_engine.py`, not in route handlers. Pipeline on submit:
+`classify_request` (LLM or rules, plus admin keyword rules) → `determine_sensitivity` → `determine_scope` → cluster check (`find_similar_cases` / `create_or_attach_cluster`, non-sensitive only) → `calculate_priority` (base urgency + deadline ≤48h + affected ≥10 or ≥25% of population; capped at HIGH unless emergency) → confidence gate (≥0.85 auto-route; 0.60–0.849 suggestion + human verification; <0.60 human triage) → `select_primary_department` / `select_secondary_departments` (one canonical request, `RequestDepartment` rows PRIMARY/SUPPORTING) → `find_eligible_staff` + `calculate_assignment_score` (skill 40 + department 20 + availability 15 + workload 25 — deterministic and shown, not ML) → `start_sla` → human-readable explanation stored on the request.
 
-## Clustering
-Clustering is an impact-analysis layer. Student cases are never merged. Sensitive/high-sensitivity requests are excluded from normal clustering. The fallback uses token overlap + category/subcategory matching; it is structured so embeddings can be added later.
+**RBAC.** Enforced in the backend on every endpoint: JWT → user re-loaded from DB (role not trusted from token) → `require_roles` → `access.scoped_query` / `can_view` for row-level scope. Students: own requests only, student-safe projection (no AI internals, notes, scoring, clusters). Triage: non-restricted cases. Department staff: own/supporting department only; restricted cases only if assigned or lead. Dean: cases escalated into their departments (≥L2; restricted only ≥L3). Admin: all. The React route guards only mirror this for UX. Token is kept in `sessionStorage`; no case data stored client-side.
 
-## Sensitive / anonymous routing
-Mental-health or sensitive requests are routed to Mental Health / Counselling, excluded from normal cluster analytics, and anonymous resolver views hide student identity.
+**AI fallback.** With a key, the LLM gets a strict-JSON prompt listing the only allowed departments/subcategories/enums; the reply is validated with Pydantic `Literal` types. Any failure (no key, network, invalid JSON, invalid enum) falls back to the deterministic weighted-keyword classifier, which also runs alongside the LLM as a safety net that can only *raise* care (sensitivity, crisis, emergency) and sends LLM/rule disagreements to human review. The engine used is shown on every case.
 
-## SLA escalation
-SLA windows are configurable in the routing engine. When a case breaches its SLA, the status becomes `ESCALATED` and an escalation record is created with the next authority. The demo hierarchy is staff -> department lead -> dean -> central student administration.
+**Clustering.** Only NORMAL-sensitivity requests from the last 14 days. With embeddings: cosine ≥ 0.80. Without: normalized-token Jaccard (with synonyms) blended with category/subcategory match ≥ 0.60. A `Cluster` is an impact layer linking independent requests via `ClusterMember`; each request keeps its own student, SLA, status and resolution. Impact = distinct affected students / population (batch size, class 60, department 400, campus 5000) — the system never invents cases for students who didn't report. Attaching a case recomputes cluster priority and raises open members' priority with the reason.
 
-## API docs
-With the backend running, open http://127.0.0.1:8000/docs
+**Sensitive / anonymous routing.** Mental-health signals, harassment, or sensitivity HIGH → bypass clustering, go straight to Mental Health / Counselling, excluded from cluster analytics (aggregate count only), invisible to triage and unrelated departments. Crisis wording triggers CRITICAL priority and immediate crisis contacts for the student. Anonymous mode: DB keeps the linkage for integrity, but staff APIs return "Anonymous student (identity protected)"; the student tracks it via their authenticated portal and request ID. Confidential mode: Medical/Disability default.
 
+**SLA escalation.** SLA rules per priority (admin-editable). States: within / approaching (inside the warning window) / breached. A background loop (every 60 s, plus on dashboard load) runs `check_sla`: on breach → status ESCALATED, `Escalation` record, notify next authority, escalation level +1, new window, audit log. Path: L1 staff → L2 department lead → L3 dean → L4 central administration, capped per priority (LOW stops at L2). Critical medical/safety cases use the emergency path straight to L3. Three reassignments also auto-escalate. The authority closes the escalation with a decision note.
+
+## Notes
+- Built as a prototype: SLA hours are illustrative, not institutional promises.
+- No external email: notifications are in-app.
