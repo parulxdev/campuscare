@@ -2,7 +2,7 @@
 
 **AI-Powered Student Triage & Intelligent Support Routing**
 
-A demo-ready hackathon prototype for Student Triage & Routing. The design follows the supplied challenge brief: the central feature is intelligent triage, routing, escalation and privacy-aware handling rather than a generic helpdesk.
+A demo-ready prototype for Student Triage & Routing. The design follows the supplied challenge brief: the central feature is intelligent triage, routing, escalation and privacy-aware handling rather than a generic helpdesk.
 
 ## Stack
 - Frontend: React + Vite + Tailwind CSS + Recharts
