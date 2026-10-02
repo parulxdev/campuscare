@@ -1,4 +1,4 @@
-# CampusCare — AI-Powered Student Triage & Intelligent Support Routing
+# CampusCare : AI-Powered Student Triage & Intelligent Support Routing
 
 **Student Triage & Routing.** One student, one real need: *"I have a problem and I don't know which office handles it."*
 The student writes it once, in their own words. CampusCare works out where it belongs, whether it is sensitive, how many others are hit,who should own it, and escalates it if nobody acts in time.
